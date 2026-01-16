@@ -1,0 +1,13 @@
+numpy==2.4.1
+pandas==2.3.3
+pymongo==4.16.0
+langchain==1.2.3
+langchain-community==0.4.1
+streamlit==1.52.2
+uuid-utils==0.13.0
+langchain-core==1.2.7
+langchain-classic
+langchain_ollama
+reportlab
+datetime
+python-dotenv
