@@ -6,6 +6,8 @@ from reportlab.lib.units import inch
 from agent_llm import agent_executor
 from database import collection
 from data_cleaning import clean_text
+import time
+from datetime import datetime
 
 # -------------------------------
 # CONFIG
@@ -13,8 +15,30 @@ from data_cleaning import clean_text
 PDF_FILE = "C:/baneenterprises/employees_bane.pdf"
 
 st.set_page_config(page_title="Employee Agent", layout="centered")
-
 st.title("🤖 Employee Management Assistant")
+
+# -------------------------------
+# SESSION STATE (STOP FLAG)
+# -------------------------------
+if "stop_execution" not in st.session_state:
+    st.session_state.stop_execution = False
+
+# -------------------------------
+# CONTROL BUTTONS
+# -------------------------------
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🚀 Submit"):
+        st.session_state.stop_execution = False
+        run_agent = True
+    else:
+        run_agent = False
+
+with col2:
+    if st.button("⛔ Stop"):
+        st.session_state.stop_execution = True
+        st.warning("Execution stopped by user.")
 
 # -------------------------------
 # USER INPUT
@@ -27,17 +51,33 @@ user_input = st.text_area(
 # -------------------------------
 # PROCESS INPUT
 # -------------------------------
-if st.button("🚀 Submit"):
+if run_agent:
+
     if user_input.strip() == "":
         st.warning("Please enter employee details.")
+
+    elif st.session_state.stop_execution:
+        st.warning("Execution cancelled.")
+
     else:
         with st.spinner("Processing..."):
 
+            # 🔹 Clean input
             cleaned_user_input = clean_text(user_input)
+
+            # 🔹 STOP CHECK BEFORE LLM CALL
+            if st.session_state.stop_execution:
+                st.warning("Stopped before agent execution.")
+                st.stop()
 
             response = agent_executor.invoke({
                 "input": cleaned_user_input
             })
+
+        # 🔹 STOP CHECK AFTER LLM CALL
+        if st.session_state.stop_execution:
+            st.warning("Stopped after agent execution.")
+            st.stop()
 
         output = response.get("output", "No response generated")
 
@@ -46,7 +86,7 @@ if st.button("🚀 Submit"):
         st.write(output)
 
         # Save to MongoDB
-        collection.insert_many({"LLM_response": output})
+        collection.insert_many([{"LLM_response": clean_text(output), "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
         st.info("Saved response to MongoDB")
 
 # -------------------------------
@@ -54,7 +94,6 @@ if st.button("🚀 Submit"):
 # -------------------------------
 def export_mongodb_to_pdf():
     data = list(collection.find({}, {"_id": 0}))
-
     if not data:
         return False
 
@@ -71,6 +110,12 @@ def export_mongodb_to_pdf():
     story = []
 
     for idx, emp in enumerate(data, start=1):
+
+        # 🔴 STOP CHECK DURING PDF LOOP
+        if st.session_state.stop_execution:
+            st.warning("PDF generation stopped.")
+            return False
+
         story.append(Paragraph(f"<b>Record {idx}</b>", styles["Heading3"]))
         story.append(Spacer(1, 0.2 * inch))
 
@@ -82,6 +127,8 @@ def export_mongodb_to_pdf():
         story.append(Paragraph("-" * 80, styles["Normal"]))
         story.append(Spacer(1, 0.3 * inch))
 
+        time.sleep(0.05)  # allows stop button to respond
+
     pdf.build(story)
     return True
 
@@ -91,10 +138,12 @@ def export_mongodb_to_pdf():
 st.divider()
 
 if st.button("📄 Export MongoDB to PDF"):
+    st.session_state.stop_execution = False
+
     with st.spinner("Generating PDF..."):
         success = export_mongodb_to_pdf()
 
     if success:
         st.success(f"PDF exported successfully to:\n{PDF_FILE}")
     else:
-        st.error("No data found in MongoDB.")
+        st.error("PDF generation stopped or no data found.")
